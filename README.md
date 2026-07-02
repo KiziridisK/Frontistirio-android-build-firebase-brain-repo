@@ -170,20 +170,29 @@ check, in order:
 
 ---
 
-## 8. Revert for production
-- `capacitor.config.ts` → `server.androidScheme: 'https'`.
-- Native build should point at the **https** prod API (production config / `environment.prod.ts`).
-- Cleartext (`usesCleartextTraffic`) can be dropped for release (or keep it debug-only).
-- Never commit `serviceAccountKey.json` (it's `.gitignore`d).
+## 8. Emulator vs production build (automated)
+`androidScheme` differs (http for the local-backend emulator, https for prod) but it's a single Capacitor value — so it's driven by an env var instead of hand-editing:
+```ts
+// capacitor.config.ts
+androidScheme: process.env.CAP_ANDROID_SCHEME === 'http' ? 'http' : 'https'   // default https
+```
+```jsonc
+// package.json scripts (needs cross-env)
+"cap:emulator": "ng build --configuration emulator && cross-env CAP_ANDROID_SCHEME=http cap sync android",
+"cap:prod":     "ng build --configuration production && cap sync android"      // https + prod API
+```
+- **Device hitting the prod API Gateway** (`https://…execute-api…/Prod`, already in `environment.prod.ts`): `npm run cap:prod` → ▶ Run with the phone connected (USB debugging), or Build → Build APK(s) → sideload. https everywhere → **no cleartext/mixed-content issues** (they were only needed for the local http backend).
+- **Deploy the backend** to EC2/prod too: the CORS Capacitor origins + `firebase-admin` + service account must be on the server, or prod push/requests fail.
+- Cleartext (`usesCleartextTraffic`) can be dropped for release (or kept debug-only). Never commit `serviceAccountKey.json` (`.gitignore`d).
 
 ---
 
 ## 9. Command cheat-sheet
 ```bash
 # web → native
-npm run cap:emulator                       # BEST: ng build (emulator env, 10.0.2.2) + cap sync android
-ng build --configuration development       # or npm run build:ionic (prod)
-npx cap sync android                       # copy web + plugins
+npm run cap:emulator                       # emulator: ng build (10.0.2.2) + http scheme + cap sync
+npm run cap:prod                           # device/prod: ng build (API Gateway) + https scheme + cap sync
+npx cap sync android                       # copy web + plugins (manual)
 npx cap open android                       # open in Android Studio
 npx cap run android                        # build+install to a running device/emulator (needs SDK on PATH)
 
