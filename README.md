@@ -92,7 +92,12 @@ npx cap open android                # Android Studio → wait for Gradle sync �
 ## 5. ⚠️ The gotchas (why this runbook exists)
 
 ### 5.1 Which environment config the native build bakes in
-The native app bundles **whatever `www/` you last built**. `npm run build:ionic` = **production** (`environment.prod.ts` → the AWS URL). A plain `ng build --configuration development` = `environment.ts`. So to test against the **local backend**, build with an env that points at it, then `cap sync`.
+The native app bundles **whatever `www/` you last built**. This project has **three** envs so you never hand-edit URLs:
+- `environment.ts` → `localhost:3000` — **browser dev** (`ng serve`).
+- `environment.emulator.ts` → `10.0.2.2:3000` — **emulator** builds (`ng build --configuration emulator`).
+- `environment.prod.ts` → deployed API — **production** (`npm run build:ionic`).
+
+**Shortcut:** `npm run cap:emulator` = `ng build --configuration emulator && cap sync android` (build with the emulator URL + sync in one step) → then ▶ Run in Android Studio. So `environment.ts` stays on `localhost` permanently.
 
 ### 5.2 `localhost` from the emulator ≠ your PC
 Inside the emulator, `localhost` is the emulator itself. Reach the host at **`http://10.0.2.2:3000`** (standard AVD alias). Physical device → the PC's **LAN IP** (same network, firewall open).
@@ -176,6 +181,7 @@ check, in order:
 ## 9. Command cheat-sheet
 ```bash
 # web → native
+npm run cap:emulator                       # BEST: ng build (emulator env, 10.0.2.2) + cap sync android
 ng build --configuration development       # or npm run build:ionic (prod)
 npx cap sync android                       # copy web + plugins
 npx cap open android                       # open in Android Studio
