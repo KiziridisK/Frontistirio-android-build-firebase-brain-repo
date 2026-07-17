@@ -220,6 +220,35 @@ androidScheme: process.env.CAP_ANDROID_SCHEME === 'http' ? 'http' : 'https'   //
 
 **Prereq — deploy the backend first:** the prod server must have the native CORS origins (§5.10) + `firebase-admin` + `serviceAccountKey.json`, or login/push fail on the device.
 
+### 9.0 CLI flow (current — use this)
+
+The GUI wizard below (9.1) is kept for reference only; signing is automated via Gradle now.
+**`npm run cap:prod` does NOT build an APK** — it only does `ng build` + `cap sync android`. The APK
+comes from `assembleRelease`. **Bump the version BEFORE `cap:prod`** (it runs `sync:version`; bumping
+after leaves the android project on the old version).
+
+```powershell
+npm run version:minor          # or :patch — BEFORE cap:prod
+npm run cap:prod
+cd android
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"   # no java on PATH; unset by default
+.\gradlew.bat assembleRelease
+```
+
+Output: **`android/app/build/outputs/apk/release/app-release.apk`** (note: NOT `android/app/release/`,
+which is where the old GUI wizard put it). Verify before installing — a stale APK from a previous
+build sits at that path and is easy to grab by mistake:
+
+```bash
+aapt2 dump badging app-release.apk | grep ^package:     # versionCode/versionName
+apksigner verify --print-certs app-release.apk          # expect CN=Konstantinos Kiziridis, O=Logeion
+unzip -p app-release.apk assets/capacitor.config.json   # plugins actually compiled in
+```
+Plugin classes live inside `classes*.dex` — `unzip -l | grep <plugin>` always returns 0 and proves
+nothing. Check `capacitor.config.json`, or grep the dex bytes for the class path.
+
+### 9.1 GUI wizard (legacy)
+
 1. **Build prod web + sync:** `npm run cap:prod` (→ https scheme + prod API URL + version synced).
 2. **Bump the version** if this is a new release (§10).
 3. `npx cap open android` → **Build → Generate Signed Bundle / APK…** → **APK** → Next.
@@ -233,6 +262,23 @@ androidScheme: process.env.CAP_ANDROID_SCHEME === 'http' ? 'http' : 'https'   //
 7. **Google Play** wants an **AAB**, not an APK → same wizard, pick **Android App Bundle**.
 8. Signing keytool (if you prefer CLI) is bundled with Android Studio: `C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe` (not on PATH by default).
 
+### 9.2 SDK levels — required by the Capgo updater (2026-07-16)
+
+`android/variables.gradle` must be **`compileSdkVersion = 35`** and **`minSdkVersion = 23`**, up from
+Capacitor 6's defaults of 34 / 22. `@capgo/capacitor-updater` pulls `androidx.work:work-runtime:2.10.5`
+(hardcoded in the plugin's build.gradle — *not* overridable via `rootProject.ext`), which refuses to
+build against compileSdk 34; the transitive `androidx.savedstate:1.4.0` then requires minSdk 23.
+
+- **`targetSdkVersion` stays 34 on purpose.** The AAR check only demands *compiling* against 35 —
+  raising `targetSdk` would opt into Android 15 runtime behavior (edge-to-edge) and risk the UI for
+  no benefit here.
+- AGP 8.2.1 prints `WARNING: ... tested up to compileSdk = 34` and builds fine. Only an AGP upgrade
+  silences it; not needed.
+- minSdk 23 drops Android 5.1 — negligible in 2026, but it *is* a device-reach change.
+- ⚠️ `variables.gradle` is inside the gitignored `android/` → **re-apply both bumps after any fresh
+  `npx cap add android`**, alongside the signingConfig (§9), `google-services.json`, and the
+  versionCode logic (§10).
+
 ---
 
 ## 10. App versioning (single source of truth)
@@ -242,8 +288,29 @@ androidScheme: process.env.CAP_ANDROID_SCHEME === 'http' ? 'http' : 'https'   //
 - **Android** `android/app/build.gradle` reads `package.json`: `versionName` = the version, `versionCode` derived from semver (`MAJOR*10000 + MINOR*100 + PATCH`; keep MINOR & PATCH **< 100** so it always increases).
 - **Bump:**
   - `npm run version:patch|minor|major` — bump only (`--no-git-tag-version`; works with a dirty tree).
-  - `npm run release[:minor|:major]` — **bump + deploy** web (`build:ionic` + S3 sync + CloudFront invalidate). Use for prod web deploys so the version increments each time.
+  - `npm run release[:minor|:major]` — **bump + deploy** (`build:ionic` once, then S3 + CloudFront **and** the OTA bundle). This is the normal command; web and the phones stay on the same version by construction.
 - ⚠️ The build.gradle version logic lives in the gitignored `android/` → re-apply after `cap add` (§1).
+
+### 10.1 The three deploy targets
+
+`release`/`deploy` cover the first two. The third is the only one that needs a store release.
+
+| Target | Command | Ships |
+|---|---|---|
+| Web (browser) | `npm run deploy:web` | `www/` → S3 + CloudFront |
+| Phones, OTA | `npm run deploy:ota` | `www/` → `/ota/` bundle + manifest (installed APKs pick it up) |
+| Phones, native | `npm run cap:prod` → `gradlew assembleRelease` (§9) | a new APK |
+
+`deploy` = build once → both `publish:web` and `publish:ota`. `deploy:web` / `deploy:ota` are escape
+hatches for one target only; `deploy:ota:dry` builds the artifacts without uploading.
+
+**OTA ships `www/` only** (Angular code, styles, i18n, assets). A new/upgraded Capacitor plugin,
+`capacitor.config.ts`, permissions or icons are native → new APK. `scripts/deploy-ota.js` enforces
+this rather than trusting memory: it records the plugin list + config hash in `package.json`
+`ota.native` and **refuses to publish** when that surface changed unless `ota.minNative` was moved to
+the current version (= "the APK for this version carries the new native code"). Override with
+`npm run deploy:ota -- --accept-native-change` only when the change is genuinely OTA-safe, e.g. a
+plugin was merely removed. See the `ota-live-updates` memory.
 
 ---
 
@@ -263,7 +330,10 @@ adb reverse tcp:3000 tcp:3000              # alt to 10.0.2.2: map device localho
 
 # versioning + release
 npm run version:patch                      # bump 1.0.0 → 1.0.1 (package.json → web + android + login footer)
-npm run release                            # bump patch + deploy web (build + S3 + CloudFront)
+npm run release                            # bump patch + deploy web AND OTA (build once → S3 + /ota/)
+npm run deploy:web                         # web only
+npm run deploy:ota                         # OTA only (refuses if a plugin moved w/o a minNative bump)
+npm run deploy:ota:dry                     # build bundle + manifest, upload nothing
 
 # firebase send-side sanity
 node scripts/sendTestPush.js <fcmToken>    # push straight through FCM (backend)
