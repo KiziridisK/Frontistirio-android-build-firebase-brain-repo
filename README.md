@@ -262,22 +262,36 @@ nothing. Check `capacitor.config.json`, or grep the dex bytes for the class path
 7. **Google Play** wants an **AAB**, not an APK → same wizard, pick **Android App Bundle**.
 8. Signing keytool (if you prefer CLI) is bundled with Android Studio: `C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe` (not on PATH by default).
 
-### 9.2 SDK levels — required by the Capgo updater (2026-07-16)
+### 9.2 SDK levels (current: Capacitor 8, updated 2026-10-02)
 
-`android/variables.gradle` must be **`compileSdkVersion = 35`** and **`minSdkVersion = 23`**, up from
-Capacitor 6's defaults of 34 / 22. `@capgo/capacitor-updater` pulls `androidx.work:work-runtime:2.10.5`
-(hardcoded in the plugin's build.gradle — *not* overridable via `rootProject.ext`), which refuses to
-build against compileSdk 34; the transitive `androidx.savedstate:1.4.0` then requires minSdk 23.
+`android/variables.gradle`:
 
-- **`targetSdkVersion` stays 34 on purpose.** The AAR check only demands *compiling* against 35 —
-  raising `targetSdk` would opt into Android 15 runtime behavior (edge-to-edge) and risk the UI for
-  no benefit here.
-- AGP 8.2.1 prints `WARNING: ... tested up to compileSdk = 34` and builds fine. Only an AGP upgrade
-  silences it; not needed.
-- minSdk 23 drops Android 5.1 — negligible in 2026, but it *is* a device-reach change.
-- ⚠️ `variables.gradle` is inside the gitignored `android/` → **re-apply both bumps after any fresh
-  `npx cap add android`**, alongside the signingConfig (§9), `google-services.json`, and the
-  versionCode logic (§10).
+```groovy
+minSdkVersion     = 26
+compileSdkVersion = 36
+targetSdkVersion  = 36
+```
+
+- **compileSdk / targetSdk 36** — Capacitor 8 requires both, and Google Play has required
+  targetSdk 36 for new apps *and updates* since **2026-08-31**. Neither can be lowered.
+  Capacitor 8 also needs **Java 21**.
+- **minSdk 26, deliberately above Capacitor 8's floor of 24.** This is a *web* constraint, not
+  a native one: `.browserslistrc` targets **Chrome/WebView 119+**, and an Android 7.x device
+  (API 24–25) stops receiving WebView updates well before that. At minSdk 24 Play would offer
+  the app to devices whose WebView cannot parse the bundle — it would install and then fail.
+  → **`minSdkVersion` and the `.browserslistrc` floor are coupled. Change one, change the other.**
+- Verify what actually shipped, rather than trusting the gradle file:
+  `aapt2 dump badging app-release.apk` → should print `minSdkVersion:'26'` / `targetSdkVersion:'36'`.
+- ⚠️ `variables.gradle` is inside the gitignored `android/` → **re-apply all three levels after any
+  fresh `npx cap add android`**, alongside the signingConfig (§9), `google-services.json`, and the
+  versionCode logic (§10). Nothing under `android/` is in git — this runbook is the only durable
+  record.
+
+**History.** On Capacitor 6 this section read compileSdk 35 / minSdk 23 / targetSdk 34, forced by
+`@capgo/capacitor-updater` pulling `androidx.work:work-runtime:2.10.5` (which refused compileSdk 34)
+and the transitive `androidx.savedstate:1.4.0` (which required minSdk 23). targetSdk was held at 34
+on purpose to avoid Android 15 edge-to-edge. The Capacitor 8 upgrade made all of that moot —
+edge-to-edge is now mandatory and handled in the app (`SystemBars` + `--safe-area-inset-*`).
 
 ---
 
