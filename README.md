@@ -1,5 +1,12 @@
 # Frontistirio — Android Build + Firebase Push Runbook
 
+> **Κατάσταση τεκμηρίωσης** (σφραγίδα 2026-10-24) · τελευταία γραφή **2026-10-02**.
+> **Δεν φέρει επαλήθευση έναντι κώδικα** — κανόνας #4 του ευρετηρίου. Από εκείνη την ημερομηνία ο κώδικας
+> έχει προχωρήσει **69 commits** στο frontend και **15** στο API (όλο το repo, όχι μόνο αυτό το feature).
+> Σημερινά HEAD: frontend `0f466e0` / API `cabaa2c`.
+> Η γραμμή «Stack» λέει ακόμα Angular 18 / Capacitor 6· η παραγωγή είναι **Angular 20 / Capacitor 8**.
+> Τι είναι **γνωστό** ότι λείπει: §5 και §5.1 του ευρετηρίου (`Frontistirio-brain-repos-index`).
+
 > **Procedural reference** for wrapping the Ionic/Angular web app (`Frontistirio`) as a **native Android app** with **Capacitor**: running it on an **emulator** and a **physical device**, wiring **Firebase Cloud Messaging (FCM)** push, **signing a release APK**, and **versioning** the app. Written while doing it for the [announcements feature](https://github.com/KiziridisK/Frontistirio-announcements-brain-repo) (2026-07-02). Use it whenever repeating similar native-build / push / release work. Every gotcha here is one we actually hit.
 
 **Stack:** Ionic 8 / Angular 18 / Capacitor 6 / Firebase Admin 13. **Host:** Windows. App id: `com.frontistirio.app`.
